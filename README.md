@@ -1,95 +1,97 @@
-# TARS — assistant IA personnel local
+# TARS — local personal AI assistant
 
-TARS est un assistant IA privacy-first que je développe pour apprendre l'IA appliquée en profondeur. Inspiré du robot TARS d'*Interstellar*, il fonctionne principalement en local sur mon Mac, avec fallback contrôlé vers un modèle cloud pour les tâches qui dépassent les capacités du modèle local.
+TARS is a privacy-first AI assistant I'm building to learn applied AI in depth. Inspired by the TARS robot from *Interstellar*, it runs primarily locally on my Mac, with a controlled fallback to a cloud model for tasks beyond the local model's capabilities.
 
-Ce projet est un support d'apprentissage autant qu'un outil que j'utilise au quotidien. Je documente ici les choix techniques, les arbitrages, et les limites que j'ai rencontrées.
+This project is both a learning support and a tool I use daily. I document technical choices, trade-offs, and limitations encountered along the way.
 
-## Fonctionnalités
+## Features
 
-- **Conversation texte et voix** entièrement locale (Whisper pour la transcription, Piper pour la synthèse vocale, Llama 3.1 8B pour la génération).
-- **Personnalité définie** via system prompt (sec, franc, sans flagornerie, ironie ponctuelle).
-- **Mémoire persistante** dans SQLite pour la conversation courante.
-- **RAG** sur mes documents personnels (CV, portfolio, vault Obsidian branché via symlink) avec ChromaDB et embeddings multilingues.
-- **Mémoire long-terme sémantique** : mes messages substantiels et les réponses du modèle cloud (lorsqu'invoqué) sont ingérés dans une collection dédiée, permettant de retrouver des échanges anciens.
-- **Fallback cloud** avec deux modes : auto-proposition par le modèle local quand il détecte une limite, et escalade manuelle par bouton dans l'interface.
-- **Consent-first** : chaque appel externe est une décision explicite de l'utilisateur, avec un contrôle sur ce qui sort du Mac.
-- **Interface web minimaliste** accessible sur `localhost:8000/ui`.
+- **Text and voice conversation**, fully local (Whisper for transcription, Piper for speech synthesis, Llama 3.1 8B for generation).
+- **Defined personality** via system prompt (dry, direct, no flattery, occasional irony).
+- **Persistent memory** in SQLite for the current conversation.
+- **RAG** over personal documents (CV, portfolio, Obsidian vault linked via symlink) with ChromaDB and multilingual embeddings.
+- **Semantic long-term memory**: substantial user messages and cloud model responses (when invoked) are ingested into a dedicated collection, allowing retrieval of past exchanges.
+- **Cloud fallback** with two modes: auto-proposal by the local model when it detects a limitation, and manual escalation via UI button.
+- **Consent-first**: every external call is an explicit user decision, with control over what leaves the Mac.
+- **Minimalist web interface** available at `localhost:8000/ui`.
 
 ## Architecture
 
-Le système suit un pattern client-serveur classique avec un backend FastAPI orchestrant plusieurs modules :
+![TARS Architecture](./architecture.png)
 
-- **Navigateur** → interface web sur `localhost:8000/ui`
-- **FastAPI** → orchestrateur central
-- **Ollama** → Llama 3.1 8B, local, cerveau conversationnel
-- **Whisper small** → transcription audio → texte, local
-- **Piper** → synthèse texte → audio, voix française, local
-- **ChromaDB** → base vectorielle pour RAG et mémoire long-terme, local
-- **SQLite** → historique de conversation, local
-- **API cloud** → modèle plus puissant, sollicité uniquement sur validation explicite
+The system follows a classic client-server pattern with a FastAPI backend orchestrating several modules:
 
-Le pipeline complet fonctionne sans internet pour la conversation quotidienne. Le modèle cloud n'est jamais sollicité par défaut.
+- **Browser** → web interface at `localhost:8000/ui`
+- **FastAPI** → central orchestrator
+- **Ollama** → Llama 3.1 8B, local, conversational core
+- **Whisper small** → audio → text transcription, local
+- **Piper** → text → audio synthesis, French voice, local
+- **ChromaDB** → vector database for RAG and long-term memory, local
+- **SQLite** → conversation history, local
+- **Cloud API** → more powerful model, invoked only on explicit validation
 
-## Stack technique
+The full pipeline works offline for daily conversation. The cloud model is never invoked by default.
 
-- **Backend** : Python 3.11, FastAPI, uvicorn, aiosqlite, httpx
-- **LLM local** : Ollama, Llama 3.1 8B Q4_K_M
-- **LLM cloud (fallback)** : API Anthropic, modèle Sonnet
-- **Voix** : Whisper small (STT), Piper avec voix fr_FR-gilles-low (TTS)
-- **RAG** : ChromaDB, sentence-transformers (paraphrase-multilingual-MiniLM-L12-v2)
-- **Frontend** : HTML/CSS/JS vanilla, MediaRecorder API pour le micro
+## Tech stack
 
-## Ce que j'ai appris en construisant TARS
+- **Backend**: Python 3.11, FastAPI, uvicorn, aiosqlite, httpx
+- **Local LLM**: Ollama, Llama 3.1 8B Q4_K_M
+- **Cloud LLM (fallback)**: Anthropic API, Sonnet model
+- **Voice**: Whisper small (STT), Piper with fr_FR-gilles-low voice (TTS)
+- **RAG**: ChromaDB, sentence-transformers (paraphrase-multilingual-MiniLM-L12-v2)
+- **Frontend**: Vanilla HTML/CSS/JS, MediaRecorder API for microphone
 
-Ce projet m'a fait toucher concrètement à plusieurs concepts que je ne connaissais que théoriquement.
+## What I learned building TARS
 
-**Sur les modèles.** Distinguer modèle, runtime et quantization. Comprendre pourquoi un 8B en Q4 tient dans 5 Go alors que le même modèle en FP16 fait 16 Go. Constater empiriquement que le prompt engineering pur atteint vite ses limites sur un petit modèle, et qu'aucune quantité d'instructions ne compense un modèle sous-dimensionné pour la tâche.
+This project made me touch several concepts I only knew theoretically.
 
-**Sur le RAG.** Que la similarité sémantique favorise les documents riches en prose au détriment des documents structurés type CV. Que le chunk size et le seuil de distance sont des vraies décisions à faire empiriquement, pas des paramètres à laisser par défaut. Que le vrai enjeu du RAG n'est pas le pipeline (facile) mais la qualité du corpus (dur).
+**On models.** Distinguishing model, runtime, and quantization. Understanding why an 8B in Q4 fits in 5 GB while the same model in FP16 takes 16 GB. Empirically observing that pure prompt engineering hits limits fast on a small model, and that no amount of instructions compensates for an undersized model.
 
-**Sur l'orchestration.** Que le fallback cloud n'est pas juste un appel API, mais un enjeu d'architecture et de confidentialité : quelles données on autorise à sortir, sous quel contrôle utilisateur, avec quelle traçabilité. J'ai implémenté un pattern d'escalade *consent-first* où le modèle propose l'escalade et l'utilisateur confirme. Chaque appel externe est une décision assumée.
+**On RAG.** That semantic similarity favors prose-rich documents over structured ones like CVs. That chunk size and distance threshold are real decisions to make empirically, not defaults to leave alone. That the real challenge of RAG isn't the pipeline (easy) but corpus quality (hard).
 
-**Sur la mémoire.** Qu'un LLM ne "se souvient" pas au sens fort, et que ce qu'on appelle mémoire est de la reconstruction à chaque tour. Que stocker tout est bruité, et qu'il faut curater : mes règles d'ingestion (seulement les messages user substantiels et les réponses cloud validées) évitent l'effet boule de neige des hallucinations qui s'auto-renforcent.
+**On orchestration.** That cloud fallback isn't just an API call, but an architecture and privacy question: what data is allowed to leave, under what user control, with what traceability. I implemented a *consent-first* escalation pattern where the model proposes escalation and the user confirms. Every external call is a deliberate decision.
 
-**Sur les arbitrages.** Que "100% local" est un principe qu'on doit choisir de compromettre parfois. Le fallback cloud existe pour ne pas fournir des réponses médiocres, mais il reste explicite et optionnel.
+**On memory.** That an LLM doesn't "remember" in the strong sense, and that what we call memory is reconstruction at each turn. That storing everything is noisy and requires curation: my ingestion rules (only substantial user messages and validated cloud responses) prevent the snowball effect of self-reinforcing hallucinations.
 
-## Limites connues
+**On trade-offs.** That "100% local" is a principle you sometimes have to compromise. Cloud fallback exists to avoid mediocre responses, but stays explicit and optional.
 
-- Llama 3.1 8B suit imparfaitement les instructions quand le contexte s'accumule. L'escalade vers un modèle plus grand reste possible mais optionnelle, et sous contrôle explicite de l'utilisateur.
-- Le RAG performe moins bien sur les documents très structurés (CV) que sur la prose (portfolio). Solution durable : compléter le corpus avec du contenu narratif.
-- La voix Piper reste correcte mais loin d'ElevenLabs. Choix assumé pour maintenir le 100% local sur le TTS.
-- L'ingestion incrémentale se déclenche au démarrage du serveur, pas en temps réel. Une note prise dans Obsidian pendant que TARS tourne n'est indexée qu'au prochain redémarrage.
+## Known limitations
 
-## Prochaines étapes envisagées
+- Llama 3.1 8B follows instructions imperfectly as context accumulates. Escalation to a larger model remains possible but optional, and under explicit user control.
+- RAG performs worse on highly structured documents (CV) than on prose (portfolio). Long-term fix: enrich the corpus with narrative content.
+- Piper voice is decent but far from ElevenLabs. Trade-off accepted to keep TTS fully local.
+- Incremental ingestion triggers on server startup, not in real time. A note taken in Obsidian while TARS is running is only indexed at the next restart.
 
-- Intégrations Gmail et Google Calendar en lecture seule pour enrichir le contexte quotidien.
-- Version mobile via Tailscale et PWA.
-- Fine-tuning léger (LoRA) sur la personnalité TARS pour réduire la dépendance au prompt.
+## Planned next steps
 
-## Prérequis
+- Read-only Gmail and Google Calendar integrations to enrich daily context.
+- Mobile version via Tailscale and PWA.
+- Light LoRA fine-tuning on the TARS personality to reduce prompt dependency.
 
-- macOS Apple Silicon (M1+) avec 16 Go de RAM minimum, 24 Go recommandés
+## Requirements
+
+- macOS Apple Silicon (M1+) with 16 GB RAM minimum, 24 GB recommended
 - Python 3.11
 - Homebrew, Ollama
-- Une clé API pour le modèle de fallback (optionnel)
+- An API key for the fallback model (optional)
 
 ## Installation
 
-À venir.
+Coming soon.
 
-## Structure du projet
+## Project structure
 
-- `main.py` — Serveur FastAPI, routes principales
-- `ingest.py` — Ingestion incrémentale des documents dans ChromaDB
-- `embeddings.py` — Singleton du modèle d'embeddings
-- `memory.py` — Mémoire long-terme sémantique
-- `escalation.py` — Logique de fallback vers le modèle cloud
-- `audio.py` — STT (Whisper) et TTS (Piper)
-- `Modelfile` — Configuration du modèle TARS pour Ollama
-- `index.html` — Interface web
-- `knowledge/` — Documents perso (gitignoré)
-- `voices/` — Voix Piper (gitignoré)
+- `main.py` — FastAPI server, main routes
+- `ingest.py` — Incremental document ingestion into ChromaDB
+- `embeddings.py` — Embedding model singleton
+- `memory.py` — Semantic long-term memory
+- `escalation.py` — Cloud model fallback logic
+- `audio.py` — STT (Whisper) and TTS (Piper)
+- `Modelfile.example` — TARS model configuration template for Ollama
+- `index.html` — Web interface
+- `knowledge/` — Personal documents (gitignored)
+- `voices/` — Piper voices (gitignored)
 
 ---
 
-*Projet développé par Jules Balzarini.*
+*Project by Jules Balzarini.*
