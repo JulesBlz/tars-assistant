@@ -1,0 +1,14 @@
+.env
+venv/
+__pycache__/
+*.pyc
+chroma_db/
+tars.db
+knowledge/
+*.wavtest.wav
+*.onnx
+*.onnx.json
+voices/
+.DS_Store
+Modelfile
+Modelfile.mistral

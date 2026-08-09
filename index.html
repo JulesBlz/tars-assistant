@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TARS</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0a;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #header {
+      padding: 16px 24px;
+      border-bottom: 1px solid #222;
+      font-size: 12px;
+      color: #555;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    #header span { color: #e0e0e0; }
+
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .message {
+      max-width: 70%;
+      line-height: 1.6;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      color: #888;
+    }
+
+    .message.user::before {
+      content: '> ';
+      color: #444;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      color: #e0e0e0;
+    }
+
+    .message.assistant::before {
+      content: 'TARS  ';
+      color: #555;
+      font-size: 11px;
+      letter-spacing: 1px;
+    }
+
+    .message.assistant.claude::before {
+      content: 'CLAUDE  ';
+      color: #d97757;
+    }
+
+    .message.thinking {
+      align-self: flex-start;
+      color: #333;
+      font-size: 12px;
+    }
+
+    #input-area {
+      padding: 16px 24px;
+      border-top: 1px solid #222;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #input {
+      flex: 1;
+      min-width: 200px;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid #333;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      padding: 8px 0;
+      outline: none;
+    }
+
+    #input::placeholder { color: #333; }
+    #input:focus { border-bottom-color: #666; }
+
+    button {
+      background: transparent;
+      border: 1px solid #333;
+      color: #666;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      padding: 6px 12px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: all 0.2s;
+    }
+
+    button:hover { border-color: #666; color: #e0e0e0; }
+    button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    #mic.recording {
+      border-color: #cc3333;
+      color: #cc3333;
+      animation: pulse 1s infinite;
+    }
+
+    #claude-btn {
+      border-color: #d97757;
+      color: #d97757;
+    }
+
+    #claude-btn:hover:not(:disabled) {
+      background: #d97757;
+      color: #0a0a0a;
+    }
+
+    #audio-toggle.muted {
+      border-color: #cc3333;
+      color: #cc3333;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    #clear {
+      background: transparent;
+      border: none;
+      color: #333;
+      font-size: 11px;
+    }
+
+    #clear:hover { color: #666; }
+  </style>
+</head>
+<body>
+
+  <div id="header">
+    TARS — <span>local</span> — llama 3.1 8b + claude fallback
+  </div>
+
+  <div id="messages"></div>
+
+  <div id="input-area">
+    <input id="input" type="text" placeholder="message..." autocomplete="off" />
+    <button id="send">TARS</button>
+    <button id="claude-btn" title="Envoyer directement à Claude">CLAUDE</button>
+    <button id="mic">🎤</button>
+    <button id="audio-toggle" title="Activer/désactiver la voix">🔊</button>
+    <button id="clear">effacer</button>
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    const claudeBtn = document.getElementById('claude-btn');
+    const micBtn = document.getElementById('mic');
+    const audioToggleBtn = document.getElementById('audio-toggle');
+    const clearBtn = document.getElementById('clear');
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let currentAudio = null;
+    let audioEnabled = true;
+
+    async function loadHistory() {
+      const res = await fetch('/history');
+      const data = await res.json();
+      data.history.forEach(msg => {
+        const isClaude = msg.role === 'assistant' && msg.content.startsWith('[Claude]');
+        const content = isClaude ? msg.content.replace('[Claude] ', '') : msg.content;
+        addMessage(msg.role, content, isClaude);
+      });
+    }
+
+    function addMessage(role, content, isClaude = false) {
+      const div = document.createElement('div');
+      div.className = `message ${role}${isClaude ? ' claude' : ''}`;
+      div.textContent = content;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function playTTS(text) {
+      if (!audioEnabled) return;
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+      const res = await fetch('/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text })
+      });
+      const blob = await res.blob();
+      currentAudio = new Audio(URL.createObjectURL(blob));
+      currentAudio.play();
+    }
+
+    function stopAudio() {
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+    }
+
+    async function sendToTars() {
+      const content = inputEl.value.trim();
+      if (!content) return;
+
+      inputEl.value = '';
+      sendBtn.disabled = true;
+      claudeBtn.disabled = true;
+      addMessage('user', content);
+
+      const thinking = document.createElement('div');
+      thinking.className = 'message thinking';
+      thinking.textContent = '...';
+      messagesEl.appendChild(thinking);
+
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content })
+        });
+        const data = await res.json();
+        messagesEl.removeChild(thinking);
+        const isClaude = data.source === 'claude';
+        const displayText = isClaude ? data.reply.replace('[Claude] ', '') : data.reply;
+        addMessage('assistant', displayText, isClaude);
+        playTTS(displayText);
+      } catch (e) {
+        messagesEl.removeChild(thinking);
+        addMessage('assistant', 'Erreur de connexion.');
+      }
+
+      sendBtn.disabled = false;
+      claudeBtn.disabled = false;
+      inputEl.focus();
+    }
+
+    async function sendToClaude() {
+      const content = inputEl.value.trim();
+      if (!content) return;
+
+      inputEl.value = '';
+      sendBtn.disabled = true;
+      claudeBtn.disabled = true;
+      addMessage('user', content);
+
+      const thinking = document.createElement('div');
+      thinking.className = 'message thinking';
+      thinking.textContent = 'claude...';
+      messagesEl.appendChild(thinking);
+
+      try {
+        const res = await fetch('/ask-claude', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content })
+        });
+        const data = await res.json();
+        messagesEl.removeChild(thinking);
+        const displayText = data.reply.replace('[Claude] ', '');
+        addMessage('assistant', displayText, true);
+        playTTS(displayText);
+      } catch (e) {
+        messagesEl.removeChild(thinking);
+        addMessage('assistant', 'Erreur Claude.');
+      }
+
+      sendBtn.disabled = false;
+      claudeBtn.disabled = false;
+      inputEl.focus();
+    }
+
+    async function toggleMic() {
+      if (!isRecording) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+          const blob = new Blob(audioChunks, { type: 'audio/webm' });
+          const formData = new FormData();
+          formData.append('audio', blob, 'recording.webm');
+
+          const thinking = document.createElement('div');
+          thinking.className = 'message thinking';
+          thinking.textContent = 'transcription...';
+          messagesEl.appendChild(thinking);
+
+          try {
+            const res = await fetch('/voice', { method: 'POST', body: formData });
+            const data = await res.json();
+            messagesEl.removeChild(thinking);
+            if (data.transcription) addMessage('user', data.transcription);
+            if (data.reply) {
+              const isClaude = data.source === 'claude';
+              const displayText = isClaude ? data.reply.replace('[Claude] ', '') : data.reply;
+              addMessage('assistant', displayText, isClaude);
+              playTTS(displayText);
+            }
+          } catch (e) {
+            messagesEl.removeChild(thinking);
+            addMessage('assistant', 'Erreur audio.');
+          }
+
+          stream.getTracks().forEach(t => t.stop());
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+        micBtn.classList.add('recording');
+        micBtn.textContent = '⏹';
+      } else {
+        mediaRecorder.stop();
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        micBtn.textContent = '🎤';
+      }
+    }
+
+    function toggleAudio() {
+      audioEnabled = !audioEnabled;
+      if (!audioEnabled) {
+        stopAudio();
+        audioToggleBtn.classList.add('muted');
+        audioToggleBtn.textContent = '🔇';
+        audioToggleBtn.title = 'Voix désactivée (cliquer pour activer)';
+      } else {
+        audioToggleBtn.classList.remove('muted');
+        audioToggleBtn.textContent = '🔊';
+        audioToggleBtn.title = 'Voix activée (cliquer pour désactiver)';
+      }
+    }
+
+    sendBtn.addEventListener('click', sendToTars);
+    claudeBtn.addEventListener('click', sendToClaude);
+    micBtn.addEventListener('click', toggleMic);
+    audioToggleBtn.addEventListener('click', toggleAudio);
+    inputEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter') sendToTars();
+    });
+    clearBtn.addEventListener('click', async () => {
+      await fetch('/history', { method: 'DELETE' });
+      messagesEl.innerHTML = '';
+    });
+
+    loadHistory();
+  </script>
+
+</body>
+</html>
