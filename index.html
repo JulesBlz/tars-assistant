@@ -202,16 +202,17 @@
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    async function playTTS(text) {
+    async function playTTS(text, isClaude = false) {
       if (!audioEnabled) return;
       if (currentAudio) {
         currentAudio.pause();
         currentAudio = null;
       }
+      const contentToSend = isClaude ? `[Claude] ${text}` : text;
       const res = await fetch('/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text })
+        body: JSON.stringify({ content: contentToSend })
       });
       const blob = await res.blob();
       currentAudio = new Audio(URL.createObjectURL(blob));
@@ -250,7 +251,7 @@
         const isClaude = data.source === 'claude';
         const displayText = isClaude ? data.reply.replace('[Claude] ', '') : data.reply;
         addMessage('assistant', displayText, isClaude);
-        playTTS(displayText);
+        playTTS(displayText, isClaude);
       } catch (e) {
         messagesEl.removeChild(thinking);
         addMessage('assistant', 'Erreur de connexion.');
@@ -285,7 +286,7 @@
         messagesEl.removeChild(thinking);
         const displayText = data.reply.replace('[Claude] ', '');
         addMessage('assistant', displayText, true);
-        playTTS(displayText);
+        playTTS(displayText, true);
       } catch (e) {
         messagesEl.removeChild(thinking);
         addMessage('assistant', 'Erreur Claude.');
@@ -322,7 +323,7 @@
               const isClaude = data.source === 'claude';
               const displayText = isClaude ? data.reply.replace('[Claude] ', '') : data.reply;
               addMessage('assistant', displayText, isClaude);
-              playTTS(displayText);
+              playTTS(displayText, isClaude);
             }
           } catch (e) {
             messagesEl.removeChild(thinking);
@@ -350,11 +351,11 @@
         stopAudio();
         audioToggleBtn.classList.add('muted');
         audioToggleBtn.textContent = '🔇';
-        audioToggleBtn.title = 'Voix désactivée (cliquer pour activer)';
+        audioToggleBtn.title = 'Voix désactivée';
       } else {
         audioToggleBtn.classList.remove('muted');
         audioToggleBtn.textContent = '🔊';
-        audioToggleBtn.title = 'Voix activée (cliquer pour désactiver)';
+        audioToggleBtn.title = 'Voix activée';
       }
     }
 

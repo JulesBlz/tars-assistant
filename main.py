@@ -1,21 +1,21 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
-from memory import ingest_message, retrieve_memory
 import httpx
 import aiosqlite
 import tempfile
 import subprocess
 import os
 import chromadb
-from sentence_transformers import SentenceTransformer
 from contextlib import asynccontextmanager
+from embeddings import get_embedder
 from escalation import (
     detect_escalation_proposal,
     detect_confirmation,
     detect_refusal,
     ask_claude,
 )
+from memory import ingest_message, retrieve_memory
 
 DB_PATH = "tars.db"
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -24,7 +24,6 @@ CHROMA_DIR = os.path.expanduser("~/tars/chroma_db")
 COLLECTION_NAME = "jules_knowledge"
 TOP_K = 6
 
-from embeddings import get_embedder
 embedder = get_embedder()
 chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
 try:
@@ -113,7 +112,11 @@ def build_messages_for_ollama(history, query):
 {docs_context}""")
 
     if memory_context:
-        system_parts.append(f"""Souvenirs de conversations passées avec Jules. Utilise ces éléments pour la continuité, sans les citer explicitement ("comme tu m'avais dit"). Ces souvenirs sont fiables (soit de Jules lui-même, soit de Claude).
+        system_parts.append(f"""SOUVENIRS DE CONVERSATIONS PASSÉES AVEC JULES.
+
+Tu te souviens de ces échanges. Ils sont RÉELS et FIABLES. Ne prétends JAMAIS que tu ne te souviens pas d'une conversation si un souvenir pertinent apparaît ici.
+
+Utilise ces souvenirs pour la continuité, sans les citer explicitement.
 
 {memory_context}""")
 
@@ -147,8 +150,7 @@ async def process_message(user_message):
             pending_escalation["question"] = None
             print(f"DEBUG: escalade confirmée pour: {question[:50]}...", flush=True)
             history = await load_history()
-            rag_ctx = retrieve_context(question)
-            claude_reply = ask_claude(question, context_history=history, rag_context=rag_ctx)
+            claude_reply = ask_claude(question, context_history=history)
             reply = f"[Claude] {claude_reply}"
             ingest_message("assistant", reply)
             return reply, "claude"
@@ -233,8 +235,7 @@ async def ask_claude_route(message: Message):
     ingest_message("user", message.content)
     history = await load_history()
     print(f"DEBUG: envoi direct à Claude pour: {message.content[:50]}...", flush=True)
-    rag_ctx = retrieve_context(message.content)
-    claude_reply = ask_claude(message.content, context_history=history, rag_context=rag_ctx)
+    claude_reply = ask_claude(message.content, context_history=history)
     reply = f"[Claude] {claude_reply}"
     await save_message("assistant", reply)
     ingest_message("assistant", reply)
@@ -273,20 +274,8 @@ async def voice_chat(audio: UploadFile = File(...)):
 
 @app.post("/tts")
 async def text_to_speech(message: Message):
-    from audio import clean_for_tts
-    text = clean_for_tts(message.content)
-
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        subprocess.run([
-            "piper",
-            "--model", os.path.expanduser("~/tars/voices/fr_FR-gilles-low.onnx"),
-            "--length_scale", "0.7",
-            "--output_file", f.name
-        ], input=text.encode(), check=True)
-
-        with open(f.name, "rb") as audio_file:
-            audio_data = audio_file.read()
-
-        os.unlink(f.name)
-
+    from audio import generate_audio_bytes
+    source = "claude" if message.content.startswith("[Claude]") else "tars"
+    text = message.content.replace("[Claude] ", "", 1) if source == "claude" else message.content
+    audio_data = generate_audio_bytes(text, source=source)
     return Response(content=audio_data, media_type="audio/wav")
