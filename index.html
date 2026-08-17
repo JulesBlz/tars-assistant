@@ -184,6 +184,23 @@
     let currentAudio = null;
     let audioEnabled = true;
 
+    async function loadBriefing() {
+      const briefingDiv = document.createElement('div');
+      briefingDiv.className = 'message thinking';
+      briefingDiv.textContent = 'briefing en cours...';
+      messagesEl.appendChild(briefingDiv);
+  
+      try {
+       const res = await fetch('/briefing', { method: 'POST' });
+       const data = await res.json();
+        messagesEl.removeChild(briefingDiv);
+        addMessage('assistant', data.briefing, false);
+        playTTS(data.briefing, false);
+      } catch (e) {
+        messagesEl.removeChild(briefingDiv);
+     }
+    }
+    
     async function loadHistory() {
       const res = await fetch('/history');
       const data = await res.json();
@@ -371,7 +388,7 @@
       messagesEl.innerHTML = '';
     });
 
-    loadHistory();
+    loadHistory().then(() => loadBriefing());
   </script>
 
 </body>

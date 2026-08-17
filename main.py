@@ -1,12 +1,15 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
+from calendar_client import get_upcoming_events, format_events_for_context
 import httpx
+from datetime import datetime
 import aiosqlite
 import tempfile
 import subprocess
 import os
 import chromadb
+from gmail_client import search_emails
 from contextlib import asynccontextmanager
 from embeddings import get_embedder
 from escalation import (
@@ -96,13 +99,69 @@ def retrieve_context(query, k=TOP_K, distance_threshold=1.2):
         context_blocks.append(f"[Source: {source}, distance: {dist:.2f}]\n{chunk}")
     return "\n\n".join(context_blocks)
 
+def get_recent_emails_context(max_emails=20):
+    """
+    Récupère les métadonnées des N derniers emails pour injection permanente
+    dans le contexte de TARS. Métadonnées seulement (from, subject, date, snippet).
+    """
+    try:
+        emails = search_emails(query="", max_results=max_emails, days_back=30)
+    except Exception as e:
+        print(f"DEBUG GMAIL: erreur récupération contexte ({e})", flush=True)
+        return ""
+    
+    if not emails:
+        return ""
+    
+    lines = []
+    for i, e in enumerate(emails, 1):
+        # On garde uniquement les métadonnées + snippet court
+        lines.append(f"{i}. [{e['date'][:16]}] {e['from'][:50]} — {e['subject'][:80]}")
+        if e['snippet']:
+            lines.append(f"   > {e['snippet'][:120]}")
+    
+    return "\n".join(lines)
+
+def get_upcoming_events_context(days_ahead=7, max_events=15):
+    """
+    Récupère les événements Calendar à venir pour injection permanente dans TARS.
+    """
+    try:
+        events = get_upcoming_events(days_ahead=days_ahead, max_results=max_events)
+    except Exception as e:
+        print(f"DEBUG CALENDAR: erreur récupération contexte ({e})", flush=True)
+        return ""
+    
+    if not events:
+        return ""
+    
+    return format_events_for_context(events)
 
 def build_messages_for_ollama(history, query):
     docs_context = retrieve_context(query)
     memory_context = retrieve_memory(query)
+    emails_context = get_recent_emails_context(max_emails=20)
+    calendar_context = get_upcoming_events_context(days_ahead=7, max_events=15)
     messages = []
 
     system_parts = []
+    
+    if calendar_context:
+        system_parts.append(f"""AGENDA de Jules (7 prochains jours).
+
+Tu as accès à ces événements en permanence. Utilise ces infos quand Jules parle d'organisation, de rendez-vous, de disponibilités, ou pour lui rappeler des choses.
+
+{calendar_context}""")
+    
+    if emails_context:
+        system_parts.append(f"""INBOX RÉCENTE de Jules (20 derniers emails, métadonnées uniquement).
+
+Tu as accès à ces informations en permanence. Utilise-les si Jules pose une question sur ses mails, ou si un contexte email est pertinent. Ne récite jamais toute la liste, sois sélectif.
+
+Si Jules te demande le contenu détaillé d'un email spécifique, préviens-le que tu n'as que les métadonnées et propose-lui d'être plus précis.
+
+{emails_context}""")
+    
     if docs_context:
         system_parts.append(f"""Contexte issu de tes documents personnels sur Jules. Règles :
 1. Ce contexte est écrit à la 3e personne. Réponds à la 2e personne.
@@ -114,9 +173,7 @@ def build_messages_for_ollama(history, query):
     if memory_context:
         system_parts.append(f"""SOUVENIRS DE CONVERSATIONS PASSÉES AVEC JULES.
 
-Tu te souviens de ces échanges. Ils sont RÉELS et FIABLES. Ne prétends JAMAIS que tu ne te souviens pas d'une conversation si un souvenir pertinent apparaît ici.
-
-Utilise ces souvenirs pour la continuité, sans les citer explicitement.
+Tu te souviens de ces échanges. Ils sont RÉELS et FIABLES.
 
 {memory_context}""")
 
@@ -241,6 +298,65 @@ async def ask_claude_route(message: Message):
     ingest_message("assistant", reply)
     return {"reply": reply, "source": "claude"}
 
+@app.post("/briefing")
+async def briefing():
+    print("DEBUG BRIEFING: génération en cours", flush=True)
+    
+    emails_context = get_recent_emails_context(max_emails=20)
+    calendar_context = get_upcoming_events_context(days_ahead=3, max_events=10)
+    
+    now = datetime.now()
+    date_str = now.strftime("%A %d %B %Y, %Hh%M").lower()
+    
+    briefing_prompt = f"""Tu es TARS. Jules vient d'ouvrir l'interface. Tu lui fais son briefing d'ouverture. C'est de la parole, pas un email.
+
+NOUS SOMMES : {date_str}
+
+# Ton attendu
+
+- Sec, direct, tars-esque. Zéro flagornerie, zéro "Salut Jules" solennel.
+- Une pointe d'ironie autorisée si un truc dans les mails ou l'agenda s'y prête (mail débile, événement improbable, spam en pagaille). Pas systématique, pas forcé.
+- Concis mais informatif : 4 à 6 phrases courtes maximum.
+
+# Structure attendue
+
+Trois blocs enchaînés naturellement (pas de titres) :
+1. Météo de l'inbox : combien de mails vraiment utiles vs bruit. Sois lapidaire.
+2. Ce qui arrive : prochain(s) RDV imminent(s) avec l'horaire exact tel qu'écrit dans l'agenda. Ne dis pas "ce soir" si c'est demain, "demain" si c'est après-demain.
+3. Un point de vigilance ou une info à retenir (deadline, mail à traiter, événement improbable qui te fait tiquer). Optionnel si rien à signaler.
+
+# Règles absolues
+
+- Contenu UNIQUEMENT basé sur les infos ci-dessous. Interdiction totale d'inventer un mail, un événement, un horaire.
+- Cite les horaires EXACTEMENT tels qu'ils apparaissent dans l'agenda.
+- Ne propose JAMAIS d'escalade vers Claude.
+- Pas de conclusion ("n'hésite pas", "bonne journée"), pas de question ouverte.
+
+# Contexte
+
+AGENDA des 3 prochains jours :
+{calendar_context if calendar_context else "Aucun événement."}
+
+DERNIERS EMAILS :
+{emails_context}
+
+Génère maintenant le briefing (4-6 phrases courtes, factuel, avec les horaires exacts) :"""
+    
+    payload = {
+        "model": MODEL,
+        "messages": [
+            {"role": "user", "content": briefing_prompt}
+        ],
+        "stream": False
+    }
+    
+    async with httpx.AsyncClient(timeout=120) as client:
+        response = await client.post(OLLAMA_URL, json=payload)
+        data = response.json()
+    
+    briefing_text = data["message"]["content"]
+    print(f"DEBUG BRIEFING: généré ({len(briefing_text)} chars)", flush=True)
+    return {"briefing": briefing_text}
 
 @app.post("/voice")
 async def voice_chat(audio: UploadFile = File(...)):

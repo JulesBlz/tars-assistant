@@ -12,3 +12,5 @@ voices/
 .DS_Store
 Modelfile
 Modelfile.mistral
+credentials/
+credentials/
