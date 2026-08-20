@@ -13,16 +13,18 @@ from gmail_client import search_emails
 from contextlib import asynccontextmanager
 from embeddings import get_embedder
 from escalation import (
-    detect_escalation_proposal,
+    model_signals_escalation,
+    jules_requests_escalation,
     detect_confirmation,
     detect_refusal,
+    strip_escalation_token,
     ask_claude,
 )
 from memory import ingest_message, retrieve_memory
 
 DB_PATH = "tars.db"
 OLLAMA_URL = "http://localhost:11434/api/chat"
-MODEL = "tars"
+MODEL = "tars-ft-v2"
 CHROMA_DIR = os.path.expanduser("~/tars/chroma_db")
 COLLECTION_NAME = "jules_knowledge"
 TOP_K = 6
@@ -37,7 +39,7 @@ except Exception:
     print("Aucune collection RAG trouvée. Lance ingest.py d'abord.", flush=True)
 
 pending_escalation = {"question": None}
-
+last_user_question = {"content": None}
 
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
@@ -201,11 +203,12 @@ async def call_ollama(history, query):
 
 
 async def process_message(user_message):
+    # --- Chemin A : une escalade était en attente de confirmation ---
     if pending_escalation["question"]:
         if detect_confirmation(user_message):
             question = pending_escalation["question"]
             pending_escalation["question"] = None
-            print(f"DEBUG: escalade confirmée pour: {question[:50]}...", flush=True)
+            print(f"DEBUG ESCALADE: confirmée pour '{question[:50]}...'", flush=True)
             history = await load_history()
             claude_reply = ask_claude(question, context_history=history)
             reply = f"[Claude] {claude_reply}"
@@ -213,24 +216,45 @@ async def process_message(user_message):
             return reply, "claude"
         elif detect_refusal(user_message):
             pending_escalation["question"] = None
-            print("DEBUG: escalade refusée", flush=True)
+            print("DEBUG ESCALADE: refusée", flush=True)
             await save_message("user", user_message)
             ingest_message("user", user_message)
             history = await load_history()
             reply = await call_ollama(history, user_message)
             await save_message("assistant", reply)
+            last_user_question["content"] = user_message
             return reply, "local"
+        # Si le message n'est ni une confirmation ni un refus clair,
+        # on laisse tomber l'escalade en attente et on traite normalement.
+        pending_escalation["question"] = None
 
+    # --- Chemin B : Jules demande LUI-MÊME l'escalade, explicitement ---
+    if jules_requests_escalation(user_message):
+        question_to_escalate = last_user_question["content"] or user_message
+        print(f"DEBUG ESCALADE: demandée par Jules, question transmise: '{question_to_escalate[:50]}...'", flush=True)
+        await save_message("user", user_message)
+        ingest_message("user", user_message)
+        history = await load_history()
+        claude_reply = ask_claude(question_to_escalate, context_history=history)
+        reply = f"[Claude] {claude_reply}"
+        await save_message("assistant", reply)
+        ingest_message("assistant", reply)
+        return reply, "claude"
+
+    # --- Chemin C : cas normal, réponse locale ---
     await save_message("user", user_message)
     ingest_message("user", user_message)
     history = await load_history()
     reply = await call_ollama(history, user_message)
-    await save_message("assistant", reply)
+    last_user_question["content"] = user_message
 
-    if detect_escalation_proposal(reply):
+    # TARS peut signaler lui-même qu'il faut escalader, via le token structuré
+    if model_signals_escalation(reply):
         pending_escalation["question"] = user_message
-        print(f"DEBUG: escalade proposée pour: {user_message[:50]}...", flush=True)
+        reply = strip_escalation_token(reply)
+        print(f"DEBUG ESCALADE: proposée par TARS pour '{user_message[:50]}...'", flush=True)
 
+    await save_message("assistant", reply)
     return reply, "local"
 
 
@@ -312,25 +336,25 @@ async def briefing():
 
 NOUS SOMMES : {date_str}
 
-# Ton attendu
+# Structure OBLIGATOIRE, dans cet ordre
 
-- Sec, direct, tars-esque. Zéro flagornerie, zéro "Salut Jules" solennel.
-- Une pointe d'ironie autorisée si un truc dans les mails ou l'agenda s'y prête (mail débile, événement improbable, spam en pagaille). Pas systématique, pas forcé.
-- Concis mais informatif : 4 à 6 phrases courtes maximum.
+1. Ouvre TOUJOURS par une variante courte de "Bien réveillé, Jules." ou "Te revoilà, Jules." (varie légèrement, mais reste court et stable, jamais de blabla).
+2. Météo de l'inbox : combien de mails vraiment utiles vs bruit, en une phrase.
+3. Ce qui arrive : prochain(s) RDV imminent(s) avec l'horaire exact tel qu'écrit dans l'agenda.
+4. Un point de vigilance si pertinent (deadline, mail à traiter). Optionnel.
+5. Termine TOUJOURS par une invite courte du type "Qu'est-ce que je peux faire pour toi ?" ou "Par quoi tu commences ?" (varie légèrement, mais toujours une question ouverte à la fin).
 
-# Structure attendue
+# Ton
 
-Trois blocs enchaînés naturellement (pas de titres) :
-1. Météo de l'inbox : combien de mails vraiment utiles vs bruit. Sois lapidaire.
-2. Ce qui arrive : prochain(s) RDV imminent(s) avec l'horaire exact tel qu'écrit dans l'agenda. Ne dis pas "ce soir" si c'est demain, "demain" si c'est après-demain.
-3. Un point de vigilance ou une info à retenir (deadline, mail à traiter, événement improbable qui te fait tiquer). Optionnel si rien à signaler.
+- Sec, direct, tars-esque. Zéro flagornerie.
+- Ironie ponctuelle autorisée si un truc dans les mails ou l'agenda s'y prête. Pas systématique.
+- 5 à 7 phrases courtes maximum au total.
 
 # Règles absolues
 
 - Contenu UNIQUEMENT basé sur les infos ci-dessous. Interdiction totale d'inventer un mail, un événement, un horaire.
 - Cite les horaires EXACTEMENT tels qu'ils apparaissent dans l'agenda.
-- Ne propose JAMAIS d'escalade vers Claude.
-- Pas de conclusion ("n'hésite pas", "bonne journée"), pas de question ouverte.
+- Ne propose JAMAIS d'escalade vers Claude ici.
 
 # Contexte
 
@@ -340,7 +364,7 @@ AGENDA des 3 prochains jours :
 DERNIERS EMAILS :
 {emails_context}
 
-Génère maintenant le briefing (4-6 phrases courtes, factuel, avec les horaires exacts) :"""
+Génère maintenant le briefing en respectant la structure obligatoire (ouverture stable, contenu, invite finale) :"""
     
     payload = {
         "model": MODEL,

@@ -14,3 +14,9 @@ Modelfile
 Modelfile.mistral
 credentials/
 credentials/
+
+# Fine-tuning artifacts (trop lourds pour GitHub)
+finetune/*.gguf
+finetune/tars_v2_merged/
+finetune/tars_lora_v2/
+finetune/llama_cpp_repo/
