@@ -43,6 +43,14 @@ To reduce dependency on a large system prompt and make the personality more stab
 
 **Takeaway.** The quality of a fine-tuning dataset isn't measured by style but by what it implicitly teaches. A dataset that never contains abstention teaches the model to never abstain. Fine-tuning personality on a small corpus is a real trade-off between style and factual reliability.
 
+## Agentic layer & evaluation
+ 
+Beyond conversation, TARS has an instrumented **agentic layer**: a hand-written tool-use loop (no framework) that exposes three tools to the model — RAG search, Google Calendar write, and web search — and lets it decide when to call them via native function calling. The emphasis is on **measurement**: a 50-case test set with ground truth, written before implementation and designed to be hard (ambiguous questions, two-tool chains, unanswerable questions), plus JSONL logging and a separate scoring pipeline.
+ 
+I evaluated five configurations on the same cases — the base model, a personality system prompt, two LoRA fine-tunes, and Claude as the cloud ceiling. Key findings: local models match the cloud on single-tool tasks but fall behind on multi-step reasoning; and **personality via prompt preserves tool-use ability while personality via fine-tuning measurably degrades it**. Full method, results tables and analysis in [`agent/README.md`](./agent/README.md).
+ 
+Measurement design worth noting: the calendar tool has a **dry-run mode** and web search has a **response cache**, so evaluation runs are fully replayable despite a side-effecting tool and a non-deterministic one. Logging is purely factual; scoring is separate, so metrics can be recomputed without re-running the agent.
+
 ## Tech stack
 
 - **Backend**: Python 3.11, FastAPI, uvicorn, aiosqlite, httpx

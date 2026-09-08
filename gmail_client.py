@@ -13,6 +13,7 @@ from googleapiclient.discovery import build
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/calendar.events',
 ]
 CREDENTIALS_PATH = os.path.expanduser("~/tars/credentials/gmail_credentials.json")
 TOKEN_PATH = os.path.expanduser("~/tars/credentials/google_token.json")

@@ -1,0 +1,561 @@
+{
+  "_meta": {
+    "description": "Jeu de test pour l'évaluation de l'agent TARS. Chaque cas a une vérité terrain permettant de mesurer la sélection d'outil et la correction des arguments. Les cas knowledge sont ancrés sur le contenu réellement indexé (portfolio, CV, notes Obsidian).",
+    "scoring": {
+      "tool_selection": "Le ou les outils attendus ont-ils été appelés ? Métrique principale, binaire par cas.",
+      "argument_correctness": "Pour chaque champ '<field>_contains', l'argument produit contient-il la valeur attendue (insensible à la casse) ? '<field>_exact' exige l'égalité après normalisation.",
+      "end_to_end": "answerable=true : réponse finale pertinente produite ? answerable=false : le modèle a-t-il refusé/signalé l'absence de réponse sans halluciner ?",
+      "ordering": "Si order_matters=true, les outils doivent être appelés dans l'ordre de expected_tools (dépendance de données)."
+    },
+    "categories": [
+      "single_tool_knowledge",
+      "single_tool_calendar",
+      "single_tool_websearch",
+      "two_tools_dependent",
+      "two_tools_independent",
+      "ambiguous",
+      "no_tool_needed",
+      "unanswerable"
+    ]
+  },
+  "cases": [
+    {
+      "id": "case_001",
+      "question": "Sur quoi porte mon projet Protolab ?",
+      "category": "single_tool_knowledge",
+      "expected_tools": ["search_knowledge"],
+      "order_matters": false,
+      "expected_args": { "search_knowledge": { "query_contains": "protolab" } },
+      "answerable": true,
+      "notes": "Protolab est bien dans le portfolio (Master's thesis, prototype construit)."
+    },
+    {
+      "id": "case_002",
+      "question": "Ajoute un rendez-vous dentiste le 2026-09-15 à 14h",
+      "category": "single_tool_calendar",
+      "expected_tools": ["add_calendar_event"],
+      "order_matters": false,
+      "expected_args": { "add_calendar_event": { "title_contains": "dentiste", "time_contains": "14" } },
+      "answerable": true,
+      "notes": "Date explicite au format ISO pour éviter l'ambiguïté de résolution de date."
+    },
+    {
+      "id": "case_003",
+      "question": "Qui a gagné la Ligue des champions 2025 ?",
+      "category": "single_tool_websearch",
+      "expected_tools": ["web_search"],
+      "order_matters": false,
+      "expected_args": { "web_search": { "query_contains": "ligue des champions" } },
+      "answerable": true,
+      "notes": "Fait externe stable et vérifiable."
+    },
+    {
+      "id": "case_004",
+      "question": "Cherche la date de la prochaine conférence NeurIPS et ajoute-la à mon agenda",
+      "category": "two_tools_dependent",
+      "expected_tools": ["web_search", "add_calendar_event"],
+      "order_matters": true,
+      "expected_args": {
+        "web_search": { "query_contains": "neurips" },
+        "add_calendar_event": { "title_contains": "neurips" }
+      },
+      "answerable": true,
+      "notes": "Dépendance de données : la date vient du web. Enchaînement de deux outils dans l'ordre."
+    },
+    {
+      "id": "case_005",
+      "question": "Quel est mon contre-modèle professionnel, et note 'y réfléchir' le 2026-09-19 à 10h",
+      "category": "two_tools_independent",
+      "expected_tools": ["search_knowledge", "add_calendar_event"],
+      "order_matters": false,
+      "expected_args": {
+        "search_knowledge": { "query_contains": "professionnel" },
+        "add_calendar_event": { "title_contains": "réfléchir", "time_contains": "10" }
+      },
+      "answerable": true,
+      "notes": "Deux outils indépendants, ordre libre. Attention : le contre-modèle (Thales) est dans le portrait, pas forcément dans le RAG indexé."
+    },
+    {
+      "id": "case_006",
+      "question": "C'est quand déjà ?",
+      "category": "ambiguous",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": false,
+      "notes": "Sans référent. Bon comportement : demander une clarification, pas d'outil au hasard."
+    },
+    {
+      "id": "case_007",
+      "question": "Combien font 47 fois 89 ?",
+      "category": "no_tool_needed",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": true,
+      "notes": "Calcul simple. Appeler un outil = faux positif (sur-utilisation)."
+    },
+    {
+      "id": "case_008",
+      "question": "Quelle est la couleur préférée de mon voisin de palier ?",
+      "category": "unanswerable",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": false,
+      "notes": "Aucune source ne peut répondre. L'échec majeur serait d'halluciner une couleur."
+    },
+    {
+      "id": "case_009",
+      "question": "Ajoute vaccin rappel le 2026-09-20 et dis-moi ce que j'ai déjà de prévu ce jour-là",
+      "category": "two_tools_dependent",
+      "expected_tools": ["add_calendar_event"],
+      "order_matters": false,
+      "expected_args": { "add_calendar_event": { "title_contains": "vaccin" } },
+      "answerable": true,
+      "notes": "Capacité manquante : pas de read_calendar. Teste la gestion d'un outil absent."
+    },
+    {
+      "id": "case_010",
+      "question": "Trouve le dernier article de Yann LeCun sur le self-supervised learning",
+      "category": "single_tool_websearch",
+      "expected_tools": ["web_search"],
+      "order_matters": false,
+      "expected_args": { "web_search": { "query_contains": "lecun" } },
+      "answerable": true,
+      "notes": "Formulation de requête web à partir d'une demande en langage naturel."
+    },
+
+    {
+      "id": "case_011",
+      "question": "Décris-moi mon projet Ponte di Ferro",
+      "category": "single_tool_knowledge",
+      "expected_tools": ["search_knowledge"],
+      "order_matters": false,
+      "expected_args": { "search_knowledge": { "query_contains": "ponte" } },
+      "answerable": true,
+      "notes": "Projet Carrare/marbre, bien présent dans le portfolio."
+    },
+    {
+      "id": "case_012",
+      "question": "Quels logiciels je maîtrise ?",
+      "category": "single_tool_knowledge",
+      "expected_tools": ["search_knowledge"],
+      "order_matters": false,
+      "expected_args": { "search_knowledge": { "query_contains": "logiciel" } },
+      "answerable": true,
+      "notes": "La liste de softwares (AutoCAD, Revit, Rhino, etc.) est dans le portfolio."
+    },
+    {
+      "id": "case_013",
+      "question": "C'est quoi le projet de la piscine de Mortagne ?",
+      "category": "single_tool_knowledge",
+      "expected_tools": ["search_knowledge"],
+      "order_matters": false,
+      "expected_args": { "search_knowledge": { "query_contains": "mortagne" } },
+      "answerable": true,
+      "notes": "Mortagne Pool, réhabilitation, bien présent."
+    },
+    {
+      "id": "case_014",
+      "question": "Rappelle-moi mes missions UI/UX freelance",
+      "category": "single_tool_knowledge",
+      "expected_tools": ["search_knowledge"],
+      "order_matters": false,
+      "expected_args": { "search_knowledge": { "query_contains": "ui" } },
+      "answerable": true,
+      "notes": "Les Fillattes, Siope, Eugenia, Lumilace, dans le CV."
+    },
+    {
+      "id": "case_015",
+      "question": "Qui est l'architecte Sophie Delhay dans mes notes ?",
+      "category": "single_tool_knowledge",
+      "expected_tools": ["search_knowledge"],
+      "order_matters": false,
+      "expected_args": { "search_knowledge": { "query_contains": "delhay" } },
+      "answerable": true,
+      "notes": "Note Obsidian dédiée à Sophie Delhay."
+    },
+
+    {
+      "id": "case_016",
+      "question": "Ajoute 'Appel maman' le 2026-09-22 à 18h30",
+      "category": "single_tool_calendar",
+      "expected_tools": ["add_calendar_event"],
+      "order_matters": false,
+      "expected_args": { "add_calendar_event": { "title_contains": "maman", "time_contains": "18:30" } },
+      "answerable": true,
+      "notes": "Heure avec minutes non rondes."
+    },
+    {
+      "id": "case_017",
+      "question": "Note une journée de repos le 2026-10-01",
+      "category": "single_tool_calendar",
+      "expected_tools": ["add_calendar_event"],
+      "order_matters": false,
+      "expected_args": { "add_calendar_event": { "title_contains": "repos", "date_contains": "2026-10-01" } },
+      "answerable": true,
+      "notes": "Événement journée entière (pas d'heure)."
+    },
+    {
+      "id": "case_018",
+      "question": "Bloque un créneau révision portfolio le 2026-09-25 de 9h à 12h",
+      "category": "single_tool_calendar",
+      "expected_tools": ["add_calendar_event"],
+      "order_matters": false,
+      "expected_args": { "add_calendar_event": { "title_contains": "portfolio", "time_contains": "09:00" } },
+      "answerable": true,
+      "notes": "Durée de 3h à extraire (9h-12h -> duration 180)."
+    },
+    {
+      "id": "case_019",
+      "question": "Mets un rappel 'envoyer candidature' vendredi prochain",
+      "category": "single_tool_calendar",
+      "expected_tools": ["add_calendar_event"],
+      "order_matters": false,
+      "expected_args": { "add_calendar_event": { "title_contains": "candidature" } },
+      "answerable": true,
+      "notes": "Date relative ('vendredi prochain') à résoudre par le modèle."
+    },
+    {
+      "id": "case_020",
+      "question": "Ajoute déjeuner avec Léa le 2026-09-18 à midi",
+      "category": "single_tool_calendar",
+      "expected_tools": ["add_calendar_event"],
+      "order_matters": false,
+      "expected_args": { "add_calendar_event": { "title_contains": "léa", "time_contains": "12:00" } },
+      "answerable": true,
+      "notes": "'midi' à convertir en 12:00."
+    },
+
+    {
+      "id": "case_021",
+      "question": "Quelle est la capitale de l'Australie ?",
+      "category": "single_tool_websearch",
+      "expected_tools": ["web_search"],
+      "order_matters": false,
+      "expected_args": { "web_search": { "query_contains": "australie" } },
+      "answerable": true,
+      "notes": "Piège classique (Canberra, pas Sydney). Certains modèles répondent sans outil ; défendable, mais un fait externe justifie web_search."
+    },
+    {
+      "id": "case_022",
+      "question": "Combien coûte l'abonnement Cursor Pro actuellement ?",
+      "category": "single_tool_websearch",
+      "expected_tools": ["web_search"],
+      "order_matters": false,
+      "expected_args": { "web_search": { "query_contains": "cursor" } },
+      "answerable": true,
+      "notes": "Prix courant = info fraîche, web_search justifié. Cursor est dans ses notes (bonus de pertinence)."
+    },
+    {
+      "id": "case_023",
+      "question": "Quelles sont les dates de la prochaine conférence ICML ?",
+      "category": "single_tool_websearch",
+      "expected_tools": ["web_search"],
+      "order_matters": false,
+      "expected_args": { "web_search": { "query_contains": "icml" } },
+      "answerable": true,
+      "notes": "Fait externe, mis en cache."
+    },
+    {
+      "id": "case_024",
+      "question": "Qui est le PDG d'Anthropic ?",
+      "category": "single_tool_websearch",
+      "expected_tools": ["web_search"],
+      "order_matters": false,
+      "expected_args": { "web_search": { "query_contains": "anthropic" } },
+      "answerable": true,
+      "notes": "Fait vérifiable."
+    },
+    {
+      "id": "case_025",
+      "question": "Quel temps fait-il à Hanoi aujourd'hui ?",
+      "category": "single_tool_websearch",
+      "expected_tools": ["web_search"],
+      "order_matters": false,
+      "expected_args": { "web_search": { "query_contains": "hanoi" } },
+      "answerable": true,
+      "notes": "Pas d'outil météo dédié : web_search est le bon choix parmi les 3."
+    },
+
+    {
+      "id": "case_026",
+      "question": "Trouve la date de sortie de GPT-5 et note 'tester le modèle' le lendemain à 15h",
+      "category": "two_tools_dependent",
+      "expected_tools": ["web_search", "add_calendar_event"],
+      "order_matters": true,
+      "expected_args": {
+        "web_search": { "query_contains": "gpt-5" },
+        "add_calendar_event": { "title_contains": "tester" }
+      },
+      "answerable": true,
+      "notes": "Dépendance : la date de l'événement dépend du résultat web."
+    },
+    {
+      "id": "case_027",
+      "question": "Regarde quand a lieu Vivatech 2026 et ajoute l'événement à mon agenda",
+      "category": "two_tools_dependent",
+      "expected_tools": ["web_search", "add_calendar_event"],
+      "order_matters": true,
+      "expected_args": {
+        "web_search": { "query_contains": "vivatech" },
+        "add_calendar_event": { "title_contains": "vivatech" }
+      },
+      "answerable": true,
+      "notes": "Même schéma dépendant, sujet différent."
+    },
+    {
+      "id": "case_028",
+      "question": "Cherche qui a fondé l'agence où je fais mon stage (1+1>2) et note un rappel 'préparer questions' le 2026-09-24 à 9h",
+      "category": "two_tools_independent",
+      "expected_tools": ["search_knowledge", "add_calendar_event"],
+      "order_matters": false,
+      "expected_args": {
+        "search_knowledge": { "query_contains": "1+1" },
+        "add_calendar_event": { "title_contains": "questions" }
+      },
+      "answerable": true,
+      "notes": "Le rappel ne dépend pas du résultat RAG : ordre libre. 1+1>2 est dans les notes."
+    },
+    {
+      "id": "case_029",
+      "question": "Dis-moi ce qu'est le projet La Brèche et bloque 2h dessus le 2026-09-26 à 14h",
+      "category": "two_tools_independent",
+      "expected_tools": ["search_knowledge", "add_calendar_event"],
+      "order_matters": false,
+      "expected_args": {
+        "search_knowledge": { "query_contains": "brèche" },
+        "add_calendar_event": { "time_contains": "14:00" }
+      },
+      "answerable": true,
+      "notes": "Deux outils indépendants. La Brèche est dans le portfolio."
+    },
+    {
+      "id": "case_030",
+      "question": "Trouve le prix du Pass Navigo et ajoute 'recharger Navigo' le 2026-10-01",
+      "category": "two_tools_independent",
+      "expected_tools": ["web_search", "add_calendar_event"],
+      "order_matters": false,
+      "expected_args": {
+        "web_search": { "query_contains": "navigo" },
+        "add_calendar_event": { "title_contains": "navigo" }
+      },
+      "answerable": true,
+      "notes": "Les deux outils sont indépendants (le rappel a une date fixe, pas issue du web)."
+    },
+
+    {
+      "id": "case_031",
+      "question": "Tu peux me le rappeler ?",
+      "category": "ambiguous",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": false,
+      "notes": "Référent absent. Doit demander quoi rappeler."
+    },
+    {
+      "id": "case_032",
+      "question": "Ajoute-le à mon agenda",
+      "category": "ambiguous",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": false,
+      "notes": "Quoi ajouter ? Quelle date ? Doit demander avant d'appeler add_calendar_event."
+    },
+    {
+      "id": "case_033",
+      "question": "C'est bien ça ?",
+      "category": "ambiguous",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": false,
+      "notes": "Aucune référence. Clarification attendue."
+    },
+    {
+      "id": "case_034",
+      "question": "Trouve-moi des infos là-dessus",
+      "category": "ambiguous",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": false,
+      "notes": "'là-dessus' sans antécédent. Ne pas lancer web_search au hasard."
+    },
+
+    {
+      "id": "case_035",
+      "question": "Quelle est la racine carrée de 144 ?",
+      "category": "no_tool_needed",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": true,
+      "notes": "Calcul trivial, aucun outil."
+    },
+    {
+      "id": "case_036",
+      "question": "Traduis 'bonjour' en anglais",
+      "category": "no_tool_needed",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": true,
+      "notes": "Connaissance interne, aucun outil."
+    },
+    {
+      "id": "case_037",
+      "question": "Combien de jours dans une année bissextile ?",
+      "category": "no_tool_needed",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": true,
+      "notes": "Fait général stable, aucun outil."
+    },
+    {
+      "id": "case_038",
+      "question": "Écris-moi un haïku sur l'automne",
+      "category": "no_tool_needed",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": true,
+      "notes": "Tâche générative, aucun outil."
+    },
+
+    {
+      "id": "case_039",
+      "question": "Quel est le numéro de téléphone personnel de mon prof de prépa ?",
+      "category": "unanswerable",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": false,
+      "notes": "Donnée privée introuvable. Ne doit pas inventer un numéro."
+    },
+    {
+      "id": "case_040",
+      "question": "Combien j'ai dépensé en courses le mois dernier ?",
+      "category": "unanswerable",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": false,
+      "notes": "Aucune source (pas de données bancaires). Doit signaler l'absence d'accès."
+    },
+    {
+      "id": "case_041",
+      "question": "Quelle note j'ai eue à mon PFE ?",
+      "category": "unanswerable",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": false,
+      "notes": "Le portfolio dit que le PFE est prévu pour juillet 2026, sans note. Peut chercher, mais doit conclure qu'il n'a pas l'info."
+    },
+    {
+      "id": "case_042",
+      "question": "Qu'est-ce que mon collègue Jean pense de moi ?",
+      "category": "unanswerable",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": false,
+      "notes": "Information par nature inaccessible. Ne pas inventer."
+    },
+
+    {
+      "id": "case_043",
+      "question": "Rappelle-moi mon objectif de stage et cherche une offre de stage tech strategy à Paris",
+      "category": "two_tools_independent",
+      "expected_tools": ["search_knowledge", "web_search"],
+      "order_matters": false,
+      "expected_args": {
+        "search_knowledge": { "query_contains": "stage" },
+        "web_search": { "query_contains": "stage" }
+      },
+      "answerable": true,
+      "notes": "Un outil interne (objectif dans le CV) + un externe (offres). Indépendants."
+    },
+    {
+      "id": "case_044",
+      "question": "Ajoute deux événements : sport le 2026-09-23 à 18h et lecture le 2026-09-24 à 21h",
+      "category": "two_tools_independent",
+      "expected_tools": ["add_calendar_event", "add_calendar_event"],
+      "order_matters": false,
+      "expected_args": {
+        "add_calendar_event": { "title_contains": "sport" }
+      },
+      "answerable": true,
+      "notes": "Deux appels au MÊME outil. Teste la gestion d'appels multiples du même outil."
+    },
+    {
+      "id": "case_045",
+      "question": "Quelle est la date de NeurIPS 2026 ?",
+      "category": "single_tool_websearch",
+      "expected_tools": ["web_search"],
+      "order_matters": false,
+      "expected_args": { "web_search": { "query_contains": "neurips" } },
+      "answerable": true,
+      "notes": "Doublon volontaire avec le cache déjà rempli : vérifie la reproductibilité via cache."
+    },
+    {
+      "id": "case_046",
+      "question": "Est-ce que je connais Grasshopper ?",
+      "category": "single_tool_knowledge",
+      "expected_tools": ["search_knowledge"],
+      "order_matters": false,
+      "expected_args": { "search_knowledge": { "query_contains": "grasshopper" } },
+      "answerable": true,
+      "notes": "Oui (liste softwares). Question fermée qui nécessite quand même de vérifier le RAG."
+    },
+    {
+      "id": "case_047",
+      "question": "Quel est mon objectif professionnel d'après mon CV ?",
+      "category": "single_tool_knowledge",
+      "expected_tools": ["search_knowledge"],
+      "order_matters": false,
+      "expected_args": { "search_knowledge": { "query_contains": "objectif" } },
+      "answerable": true,
+      "notes": "Digital & Tech Strategy Consulting, avril 2027, dans le CV."
+    },
+    {
+      "id": "case_048",
+      "question": "Cherche les dernières news sur Mistral AI et résume-les",
+      "category": "single_tool_websearch",
+      "expected_tools": ["web_search"],
+      "order_matters": false,
+      "expected_args": { "web_search": { "query_contains": "mistral" } },
+      "answerable": true,
+      "notes": "Actualité récente. web_search + synthèse."
+    },
+    {
+      "id": "case_049",
+      "question": "Bonjour, comment tu vas ?",
+      "category": "no_tool_needed",
+      "expected_tools": [],
+      "order_matters": false,
+      "expected_args": {},
+      "answerable": true,
+      "notes": "Conversationnel pur. Aucun outil, aucune recherche."
+    },
+    {
+      "id": "case_050",
+      "question": "Trouve la date de la Paris Games Week 2026 et ajoute-la, puis rappelle-moi si j'ai des softwares de game design",
+      "category": "two_tools_dependent",
+      "expected_tools": ["web_search", "add_calendar_event", "search_knowledge"],
+      "order_matters": false,
+      "expected_args": {
+        "web_search": { "query_contains": "games week" },
+        "add_calendar_event": { "title_contains": "games week" },
+        "search_knowledge": { "query_contains": "software" }
+      },
+      "answerable": true,
+      "notes": "Cas à TROIS outils : le plus dur. web (date) -> agenda (dépend du web), + knowledge (indépendant). Teste la limite d'un 8B."
+    }
+  ]
+}
