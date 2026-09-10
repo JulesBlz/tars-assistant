@@ -25,3 +25,4 @@ finetune/llama_cpp_repo/
 agent/logs/
 agent/cache/
 agent/__pycache__/
+docs/*.pdf

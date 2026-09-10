@@ -4,6 +4,8 @@ TARS is a privacy-first AI assistant I'm building to learn applied AI in depth. 
 
 This project is both a learning support and a tool I use daily. I document technical choices, trade-offs, and limitations encountered along the way.
 
+A full technical case study covering architecture, design decisions, the fine-tuning experiments and the evaluation methodology is available in [`docs/CASE_STUDY.md`](./docs/CASE_STUDY.md).
+
 ## Features
 
 - **Custom LoRA fine-tuning** of Llama 3.1 8B on a synthetic conversational dataset, to encode the TARS personality into the weights instead of relying on a large system prompt.
